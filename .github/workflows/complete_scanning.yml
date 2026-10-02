@@ -1,0 +1,161 @@
+name: Security Scanning
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # =========================================================
+  # 1. SECRET SCANNING - GITLEAKS
+  # =========================================================
+
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        id: gitleaks
+        continue-on-error: true
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: true
+          GITLEAKS_ENABLE_SUMMARY: true
+
+      - name: Secret Scan Warning
+        if: steps.gitleaks.outcome == 'failure'
+        run: |
+          echo "::warning::Secret scanning found possible secrets."
+          echo "::warning::Check the Gitleaks report/artifact."
+
+  # =========================================================
+  # 2. DEPENDENCY SCANNING - OWASP
+  # =========================================================
+
+  dependency-scan:
+    name: Dependency Scanning
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: maven
+
+      - name: Run OWASP Dependency Check
+        id: dependency-check
+        continue-on-error: true
+        run: |
+          mvn org.owasp:dependency-check-maven:check
+
+      - name: Dependency Scan Warning
+        if: steps.dependency-check.outcome == 'failure'
+        run: |
+          echo "::warning::Dependency scanning found vulnerabilities."
+          echo "::warning::Check the dependency-check report."
+
+      - name: Upload Dependency Check Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: |
+            target/dependency-check-report.html
+            target/dependency-check-report.json
+            target/dependency-check-report.xml
+          if-no-files-found: ignore
+
+  # =========================================================
+  # 3. CODE SCANNING - CODEQL
+  # =========================================================
+
+  code-scan:
+    name: Code Scanning
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: java
+
+      - name: Build Java Project
+        id: build
+        continue-on-error: true
+        run: |
+          mvn clean package -DskipTests
+
+      - name: Build Warning
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::warning::Java build failed."
+          echo "::warning::CodeQL analysis may be incomplete."
+
+      - name: Analyze Code
+        id: codeql
+        continue-on-error: true
+        uses: github/codeql-action/analyze@v4
+
+      - name: Code Scan Warning
+        if: steps.codeql.outcome == 'failure'
+        run: |
+          echo "::warning::CodeQL found code security problems or the analysis failed."
+          echo "::warning::Check the Security > Code scanning alerts section."
+
+  # =========================================================
+  # 4. FINAL SECURITY SUMMARY
+  # =========================================================
+
+  security-summary:
+    name: Security Scan Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - secret-scan
+      - dependency-scan
+      - code-scan
+
+    steps:
+      - name: Security Summary
+        run: |
+          echo "========================================"
+          echo "       SECURITY SCAN COMPLETED"
+          echo "========================================"
+          echo ""
+          echo "Secret Scanning       : Completed"
+          echo "Dependency Scanning   : Completed"
+          echo "Code Scanning         : Completed"
+          echo ""
+          echo "Check the workflow artifacts and"
+          echo "Security > Code scanning for details."
+          echo ""
+          echo "Findings are treated as WARNINGS."
+          echo "The workflow will not be stopped."
