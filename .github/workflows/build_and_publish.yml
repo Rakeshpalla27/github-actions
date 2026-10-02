@@ -1,0 +1,154 @@
+name: Java CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # =====================================================
+  # 1. BUILD
+  # =====================================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: maven
+
+      - name: Build application
+        run: |
+          mvn clean package -DskipTests
+
+      - name: Show WAR file
+        run: |
+          echo "Generated WAR file:"
+          ls -lh target/*.war
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-build
+          path: target/*.war
+
+  # =====================================================
+  # 2. TEST
+  # =====================================================
+  test:
+    name: Test
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: maven
+
+      - name: Run tests
+        run: |
+          mvn test
+
+  # =====================================================
+  # 3. CHECKSTYLE
+  # =====================================================
+  checkstyle:
+    name: Checkstyle
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: maven
+
+      - name: Run Checkstyle
+        run: |
+          mvn checkstyle:check || echo "Checkstyle violations found - continuing as warning"
+
+  # =====================================================
+  # 4. DOCKER BUILD AND PUSH TO ECR
+  # =====================================================
+  docker:
+    name: Build and Push Docker Image
+    needs: checkstyle
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Download WAR created by Build job
+      - name: Download WAR artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: java-build
+          path: target/
+
+      - name: Show downloaded WAR
+        run: |
+          echo "WAR file:"
+          ls -lh target/
+
+      # Configure AWS
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Login Docker to Amazon ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f Docker-files/app/multistage/Dockerfile \
+            -t vprofile:${{ github.sha }} .
+
+      # Tag image for ECR
+      - name: Tag Docker image
+        run: |
+          docker tag vprofile:${{ github.sha }} \
+            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+
+      # Push image to ECR
+      - name: Push Docker image
+        run: |
+          docker push \
+            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Show pushed image
+        run: |
+          echo "Docker image pushed successfully!"
+          echo "${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}"
