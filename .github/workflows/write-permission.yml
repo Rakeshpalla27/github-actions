@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
 
 # Give the workflow permission to write repository contents
-permissions:
-  contents: write
+permissions: {}
+#   contents: write
 
 jobs:
   write-test:
