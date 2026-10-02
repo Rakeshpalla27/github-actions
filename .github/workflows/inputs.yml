@@ -1,0 +1,17 @@
+name: Learn Inputs
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "Enter your name"
+        required: true
+        type: string
+
+jobs:
+  test-input:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Show input
+        run: echo "Hello ${{ inputs.name }}"
