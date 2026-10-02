@@ -1,0 +1,111 @@
+name: Conditions Practice
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: "Do you want to run tests?"
+        required: true
+        default: true
+        type: boolean
+
+      environment:
+        description: "Choose environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+          - prod
+
+jobs:
+  # This job always runs
+  show-info:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Show basic information
+        run: |
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Run tests: ${{ inputs.run_tests }}"
+
+  # Condition based on boolean input
+  tests:
+    runs-on: ubuntu-latest
+
+    if: ${{ inputs.run_tests == true }}
+
+    steps:
+      - name: Run tests
+        run: |
+          echo "Tests are running..."
+          echo "Tests passed!"
+
+  # Runs only when tests are disabled
+  skip-tests:
+    runs-on: ubuntu-latest
+
+    if: ${{ inputs.run_tests == false }}
+
+    steps:
+      - name: Tests skipped
+        run: |
+          echo "Tests were skipped."
+
+  # Condition based on environment input
+  deploy-dev:
+    runs-on: ubuntu-latest
+
+    if: ${{ inputs.environment == 'dev' }}
+
+    steps:
+      - name: Deploy to DEV
+        run: |
+          echo "Deploying to DEV environment..."
+
+  deploy-test:
+    runs-on: ubuntu-latest
+
+    if: ${{ inputs.environment == 'test' }}
+
+    steps:
+      - name: Deploy to TEST
+        run: |
+          echo "Deploying to TEST environment..."
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+
+    if: ${{ inputs.environment == 'prod' }}
+
+    steps:
+      - name: Deploy to PROD
+        run: |
+          echo "Deploying to PROD environment..."
+
+  # Multiple conditions
+  production-tests:
+    runs-on: ubuntu-latest
+
+    if: ${{ inputs.environment == 'prod' && inputs.run_tests == true }}
+
+    steps:
+      - name: Production tests
+        run: |
+          echo "Production environment selected"
+          echo "Tests are enabled"
+          echo "Running production tests..."
+
+  # OR condition
+  dev-or-test:
+    runs-on: ubuntu-latest
+
+    if: ${{ inputs.environment == 'dev' || inputs.environment == 'test' }}
+
+    steps:
+      - name: Dev or Test
+        run: |
+          echo "DEV or TEST environment selected."
